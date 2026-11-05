@@ -51,8 +51,8 @@ var commands = []command{
 
 // context is what a command runs with.
 type context struct {
-	devicePath string
-	profile    int // 0 means the active profile
+	devicePath string // serial number or /dev/hidrawN
+	profile    int    // 0 means the active profile
 	controller *controller
 }
 
@@ -67,7 +67,7 @@ func main() {
 	flags := flag.NewFlagSet("wolverine-ctl", flag.ContinueOnError)
 	flags.Usage = func() { usage(flags) }
 	ctx := &context{}
-	flags.StringVar(&ctx.devicePath, "device", "", "hidraw node to use, e.g. /dev/hidraw7 (default: the only connected controller)")
+	flags.StringVar(&ctx.devicePath, "device", "", "controller to use: serial number or hidraw path, see 'list' (default: the one responding controller)")
 	flags.IntVar(&ctx.profile, "profile", 0, "onboard profile to read or change (default: the active profile)")
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -115,7 +115,7 @@ func execute(ctx *context, cmd command, args []string) error {
 
 func usage(flags *flag.FlagSet) {
 	out := flags.Output()
-	fmt.Fprintln(out, "Usage: wolverine-ctl [--device PATH] [--profile N] COMMAND [ARGS]")
+	fmt.Fprintln(out, "Usage: wolverine-ctl [--device SERIAL|PATH] [--profile N] COMMAND [ARGS]")
 	fmt.Fprintln(out, "\nCommands:")
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	for _, c := range commands {
@@ -149,31 +149,28 @@ func supported() ([]hidraw.Node, error) {
 	return out, nil
 }
 
-func openController(path string) (*controller, error) {
+// openController picks the controller to talk to. selector is empty, a
+// hidraw path (/dev/hidrawN) or a serial number.
+func openController(selector string) (*controller, error) {
 	nodes, err := supported()
 	if err != nil {
 		return nil, err
 	}
-	var node hidraw.Node
-	switch {
-	case path != "":
-		found := false
+	if len(nodes) == 0 {
+		return nil, errors.New("no supported controller connected; run 'wolverine-ctl list' and see README for supported models")
+	}
+	if strings.HasPrefix(selector, "/dev/") {
 		for _, n := range nodes {
-			if n.Path == path {
-				node, found = n, true
+			if n.Path == selector {
+				return open(n)
 			}
 		}
-		if !found {
-			return nil, fmt.Errorf("%s is not a supported controller's configuration interface; run 'wolverine-ctl list'", path)
-		}
-	case len(nodes) == 0:
-		return nil, errors.New("no supported controller connected; run 'wolverine-ctl list' and see README for supported models")
-	case len(nodes) > 1:
-		return answering(nodes)
-	default:
-		node = nodes[0]
+		return nil, fmt.Errorf("%s is not a supported controller's configuration interface; run 'wolverine-ctl list'", selector)
 	}
-	return open(node)
+	if selector == "" && len(nodes) == 1 {
+		return open(nodes[0])
+	}
+	return answering(nodes, selector)
 }
 
 func open(node hidraw.Node) (*controller, error) {
@@ -185,35 +182,53 @@ func open(node hidraw.Node) (*controller, error) {
 	return &controller{node: node, model: m, device: device, client: protocol.NewClient(device)}, nil
 }
 
-// answering picks the one interface whose controller responds. A controller
-// plugged in by cable is also listed under its receiver, which then answers
-// "no response" (status 0x04).
-func answering(nodes []hidraw.Node) (*controller, error) {
-	var found []*controller
-	for _, n := range nodes {
-		c, err := open(n)
-		if err != nil {
-			continue
-		}
-		if _, err := c.client.ActiveProfile(); err != nil {
-			c.device.Close()
-			continue
-		}
-		found = append(found, c)
-	}
-	if len(found) == 1 {
-		return found[0], nil
-	}
-	for _, c := range found {
-		c.device.Close()
-	}
-	if len(found) == 0 {
-		return nil, errors.New("no connected controller responded; it may be asleep or off, press a button and retry")
-	}
-	return nil, errors.New("more than one controller is responding; choose one with --device (see 'wolverine-ctl list')")
+// probe is one configuration interface and the serial of the controller
+// answering on it.
+type probe struct {
+	node   hidraw.Node
+	serial string
+	err    error
 }
 
-// profile resolves --profile, defaulting to the active profile.
+// probeAll asks every interface for its controller's serial number. A
+// controller plugged in by cable is also listed under its receiver, which
+// then answers "no response" (status 0x04).
+func probeAll(nodes []hidraw.Node) []probe {
+	out := make([]probe, 0, len(nodes))
+	for _, n := range nodes {
+		p := probe{node: n}
+		c, err := open(n)
+		if err == nil {
+			p.serial, p.err = c.client.Serial()
+			c.device.Close()
+		} else {
+			p.err = err
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// answering opens the one responding controller, limited to serial when set.
+func answering(nodes []hidraw.Node, serial string) (*controller, error) {
+	var matches []probe
+	for _, p := range probeAll(nodes) {
+		if p.err == nil && (serial == "" || strings.EqualFold(p.serial, serial)) {
+			matches = append(matches, p)
+		}
+	}
+	switch {
+	case len(matches) == 1:
+		return open(matches[0].node)
+	case serial != "" && len(matches) == 0:
+		return nil, fmt.Errorf("no responding controller with serial %s; run 'wolverine-ctl list'", serial)
+	case len(matches) == 0:
+		return nil, errors.New("no connected controller responded; it may be asleep or off, press a button and retry")
+	default:
+		return nil, errors.New("more than one controller is responding; choose one with --device SERIAL (see 'wolverine-ctl list')")
+	}
+}
+
 func (ctx *context) resolveProfile() (byte, error) {
 	if ctx.profile < 0 || ctx.profile > 255 {
 		return 0, fmt.Errorf("invalid profile %d", ctx.profile)
@@ -237,9 +252,14 @@ func runList(_ *context, args []string) error {
 		return nil
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	for _, n := range nodes {
-		m, _ := model.Lookup(n.VendorID, n.ProductID)
-		fmt.Fprintf(w, "%s\t%04x:%04x\t%s%s\n", n.Path, n.VendorID, n.ProductID, m.Name, untested(m))
+	fmt.Fprintln(w, "DEVICE\tUSB ID\tSERIAL\tCONTROLLER")
+	for _, p := range probeAll(nodes) {
+		m, _ := model.Lookup(p.node.VendorID, p.node.ProductID)
+		serial := p.serial
+		if p.err != nil {
+			serial = "(not responding)"
+		}
+		fmt.Fprintf(w, "%s\t%04x:%04x\t%s\t%s%s\n", p.node.Path, p.node.VendorID, p.node.ProductID, serial, m.Name, untested(m))
 	}
 	return w.Flush()
 }

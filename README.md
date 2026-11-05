@@ -98,12 +98,12 @@ doesn't work as a gamepad, check `modprobe -c | grep 'blacklist xpad'`.
 ## Usage
 
 ```
-wolverine-ctl [--device PATH] [--profile N] COMMAND [ARGS]
+wolverine-ctl [--device SERIAL|PATH] [--profile N] COMMAND [ARGS]
 ```
 
 | Command | What it does |
 |---|---|
-| `list` | List connected supported controllers |
+| `list` | List connected controllers with their serial numbers |
 | `status` | Show firmware, battery, polling rate and button assignments |
 | `polling [RATE]` | Show the polling rate, or set it in Hz |
 | `map BUTTON TARGET` | Assign a button: `off`, `button NAME` or `key CHORD` |
@@ -136,6 +136,24 @@ wolverine-ctl map m4 key ctrl+shift+s
 wolverine-ctl map m5 button a
 wolverine-ctl map m6 off
 wolverine-ctl --profile 2 status
+```
+
+### More than one controller
+
+`wolverine-ctl list` shows every connection and the serial number of the
+controller answering on it (also printed on the controller's label):
+
+```
+DEVICE         USB ID     SERIAL            CONTROLLER
+/dev/hidraw15  1532:0a57  PM0000A00000001   Razer Wolverine V3 Pro 8K PC (wired)
+/dev/hidraw7   1532:0a59  (not responding)  Razer Wolverine V3 Pro 8K PC (2.4 GHz receiver)
+```
+
+With one controller responding, every command uses it. With several, choose
+one with `--device SERIAL` (stable across replugs) or `--device /dev/hidrawN`:
+
+```sh
+wolverine-ctl --device PM0000A00000001 map m3 key f13
 ```
 
 ### Button positions (V3 Pro 8K PC)
