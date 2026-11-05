@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -18,7 +19,15 @@ import (
 	"github.com/ShawnMcCool/wolverine-ctl/internal/protocol"
 )
 
+// version is set by 'make' with -ldflags; 'go install' builds fall back to
+// the module version recorded in the binary.
 var version = "dev"
+
+func init() {
+	if info, ok := debug.ReadBuildInfo(); ok && version == "dev" && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		version = info.Main.Version
+	}
+}
 
 // command is one subcommand. To add one, write its run function and add an
 // entry to commands.
