@@ -42,11 +42,12 @@ through Linux `hidraw`. The gamepad itself stays with the normal kernel driver
 
 | Controller | USB ID | Status |
 |---|---|---|
+| Wolverine V3 Pro 8K PC, USB cable | `1532:0a57` | Tested |
 | Wolverine V3 Pro 8K PC, 2.4 GHz receiver | `1532:0a59` | Tested |
 | Wolverine V4 Pro, PC HID mode (Function + Menu + Y) | `1532:0a79` | Same protocol, tested by [hyprdeck-razer](https://github.com/mikkeyboi/hyprdeck-razer); not tested with wolverine-ctl |
 
-Not yet supported: the V3 Pro 8K PC over a USB cable (`1532:0a57`), and the
-original Wolverine V3 Pro (`1532:0a3f`), which uses a different protocol.
+Not supported: the original Wolverine V3 Pro (`1532:0a3f`), which uses a
+different protocol.
 Find your controller's ID with `lsusb | grep 1532`. If you have one of these
 and can test, please open an issue.
 
@@ -156,6 +157,10 @@ independent.
 controllers sleep after a few idle minutes. The receiver stays connected and
 answers for them, but it can't reach the controller. Press a button and run
 the command again.
+
+**Cable and receiver both connected.** Both show up in `wolverine-ctl list`.
+The controller answers only on the one it's using (the cable, when plugged
+in), and wolverine-ctl picks that one automatically.
 
 **"permission denied".** Install the udev rule and replug the receiver.
 

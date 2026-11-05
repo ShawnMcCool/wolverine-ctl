@@ -28,6 +28,16 @@ var allRates = []int{250, 500, 1000, 2000, 4000, 8000}
 
 var Models = []Model{
 	{
+		Name:            "Razer Wolverine V3 Pro 8K PC (wired)",
+		VendorID:        RazerVendorID,
+		ProductID:       0x0a57,
+		ConfigInterface: 1,
+		PollingRates:    allRates,
+		Assignments:     mapping.Dialect{TargetZeroDisables: true},
+		Verified:        true,
+		Source:          "Tested with wolverine-ctl, firmware 1.4.0, 2026-11-05",
+	},
+	{
 		Name:            "Razer Wolverine V3 Pro 8K PC (2.4 GHz receiver)",
 		VendorID:        RazerVendorID,
 		ProductID:       0x0a59,

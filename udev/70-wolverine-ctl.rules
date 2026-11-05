@@ -1,6 +1,7 @@
 # wolverine-ctl: let the logged-in user open the configuration interface
 # (USB interface 1) of supported Razer Wolverine controllers. No input
 # interface is opened and no driver is unbound.
+#   1532:0a57  Wolverine V3 Pro 8K PC, wired
 #   1532:0a59  Wolverine V3 Pro 8K PC, 2.4 GHz receiver
 #   1532:0a79  Wolverine V4 Pro, PC HID mode
-ACTION=="add|change", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1532", ATTRS{idProduct}=="0a59|0a79", ENV{ID_USB_INTERFACE_NUM}=="01", TAG+="uaccess"
+ACTION=="add|change", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1532", ATTRS{idProduct}=="0a57|0a59|0a79", ENV{ID_USB_INTERFACE_NUM}=="01", TAG+="uaccess"

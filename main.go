@@ -169,16 +169,48 @@ func openController(path string) (*controller, error) {
 	case len(nodes) == 0:
 		return nil, errors.New("no supported controller connected; run 'wolverine-ctl list' and see README for supported models")
 	case len(nodes) > 1:
-		return nil, errors.New("more than one controller connected; choose one with --device (see 'wolverine-ctl list')")
+		return answering(nodes)
 	default:
 		node = nodes[0]
 	}
+	return open(node)
+}
+
+func open(node hidraw.Node) (*controller, error) {
 	m, _ := model.Lookup(node.VendorID, node.ProductID)
 	device, err := hidraw.Open(node.Path, time.Second)
 	if err != nil {
 		return nil, err
 	}
 	return &controller{node: node, model: m, device: device, client: protocol.NewClient(device)}, nil
+}
+
+// answering picks the one interface whose controller responds. A controller
+// plugged in by cable is also listed under its receiver, which then answers
+// "no response" (status 0x04).
+func answering(nodes []hidraw.Node) (*controller, error) {
+	var found []*controller
+	for _, n := range nodes {
+		c, err := open(n)
+		if err != nil {
+			continue
+		}
+		if _, err := c.client.ActiveProfile(); err != nil {
+			c.device.Close()
+			continue
+		}
+		found = append(found, c)
+	}
+	if len(found) == 1 {
+		return found[0], nil
+	}
+	for _, c := range found {
+		c.device.Close()
+	}
+	if len(found) == 0 {
+		return nil, errors.New("no connected controller responded; it may be asleep or off, press a button and retry")
+	}
+	return nil, errors.New("more than one controller is responding; choose one with --device (see 'wolverine-ctl list')")
 }
 
 // profile resolves --profile, defaulting to the active profile.

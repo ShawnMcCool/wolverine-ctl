@@ -25,8 +25,12 @@ listed here. When you add a command or a controller, add its evidence.
 - **USB HID Usage Tables 1.5**, Keyboard/Keypad page (0x07) — key usages and
   the boot-keyboard modifier byte.
 - **Hardware tests** — Wolverine V3 Pro 8K PC, firmware 1.4.0, over its
-  2.4 GHz receiver (`1532:0a59`), Linux 7.2 with `xpad` bound to interface 0,
-  2026-11-05. Results marked "verified" below.
+  2.4 GHz receiver (`1532:0a59`) and USB cable (`1532:0a57`), Linux 7.2 with
+  `xpad` bound to interface 0, 2026-11-05. Results marked "verified" below.
+  Every command in the table behaves the same on both identities. Wired
+  interface 1 declares report 10 on vendor usage page `0xff00` (receiver:
+  Generic Desktop); same 90-byte size. With the cable in, the receiver
+  answers `0x04`.
 
 ## Transport
 
@@ -41,7 +45,7 @@ listed here. When you add a command or a controller, add its evidence.
 
 ## Commands
 
-| Command | Class/ID | Arguments → reply | Source | Status on 0a59 |
+| Command | Class/ID | Arguments → reply | Source | Status on 0a57 / 0a59 |
 |---|---|---|---|---|
 | Serial number | `00/82` | 22 zero bytes → ASCII | Synapse log; OpenRazer | Verified |
 | Firmware version | `00/87` | 4 zero bytes → `[major, minor, internal, reserved, …]` | hyprdeck-razer `wolverine_firmware.rs` | Verified (1.4.0) |
@@ -49,7 +53,7 @@ listed here. When you add a command or a controller, add its evidence.
 | Polling rate get | `00/c0` | `[profile, 0]` → `[profile, period]` | hyprdeck-razer (Synapse modules 11880/38287) | Verified |
 | Polling rate set | `00/40` | `[profile, period]` | hyprdeck-razer | Verified: 2000 Hz read back, `evtest` measured 1999–2000 reports/s |
 | Battery | `07/80` | `[0, 0]` → `[0, level/255]` | hyprdeck-razer (Synapse modules 59737/50488) | Verified |
-| Charging | `07/84` | `[0, 0]` → `[0, state]` (0 no, 1 yes, 4 fast) | hyprdeck-razer | Verified (0 only) |
+| Charging | `07/84` | `[0, 0]` → `[0, state]` (0 no, 1 yes, 4 fast) | hyprdeck-razer | Verified (0 on battery, 1 on cable) |
 | Button list | `02/84` | 80 zero bytes → `[count, ids…]` | hyprdeck-razer (Synapse module 87969) | Verified: M1–M6 `0x10`–`0x15`, Share `0x3d` |
 | Assignment get | `02/8c` | `[profile, button, 0, 0…]` (10 bytes) → record | hyprdeck-razer | Verified |
 | Assignment set | `02/0c` | record (10 bytes) | hyprdeck-razer | Verified: keyboard keys and chords on M3–M6 and Share, controller button A on M1, off (target 0) |
