@@ -53,7 +53,15 @@ and can test, please open an issue.
 
 ## Install
 
-You need Go 1.24 or newer.
+Download a static binary for `amd64` or `arm64` from
+[Releases](https://github.com/ShawnMcCool/wolverine-ctl/releases), then:
+
+```sh
+sha256sum -c SHA256SUMS --ignore-missing
+sudo install -m755 wolverine-ctl-*-linux-amd64 /usr/local/bin/wolverine-ctl
+```
+
+Or with Go 1.24 or newer:
 
 ```sh
 go install github.com/ShawnMcCool/wolverine-ctl@latest
@@ -70,7 +78,8 @@ sudo make install          # /usr/local/bin/wolverine-ctl
 
 ### Permissions (udev rule)
 
-Without this, only root can open the controller. The rule gives the
+The rule file is in the repository (`udev/70-wolverine-ctl.rules`) and
+attached to each release. Without it, only root can open the controller. The rule gives the
 logged-in user access to the configuration interface of supported
 controllers, and nothing else:
 
