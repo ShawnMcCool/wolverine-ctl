@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Release mechanics for wolverine-ctl.
+#
+# Subcommands:
+#
+#   aur [<version>] [--pkgrel <n>] [--ci] [--dry-run]
+#       Publish the AUR package for <version> (default: the latest v* tag,
+#       without the "v"). The package builds from the git tag, so only pkgver,
+#       pkgrel and .SRCINFO change. Locally it commits the bump to main and
+#       pushes, then pushes the package to the AUR. With --ci (the release.yml
+#       `aur` job) it skips the repo commit and only publishes to the AUR.
+#       Needs makepkg (an Arch machine or container) and an AUR SSH key.
+#
+# A release is cut by pushing a tag: git tag -a vX.Y.Z -m ... && git push origin vX.Y.Z
+# release.yml then tests, builds the binaries, publishes the GitHub release
+# and runs `scripts/ship aur X.Y.Z --ci`.
+
+cd "$(dirname "$0")/.."
+
+PKG="wolverine-ctl"
+SRC_DIR="packaging/aur/$PKG"
+
+banner() { echo "==> $1"; }
+fail() { echo "FAILED: $1" >&2; exit 1; }
+
+last_tag() {
+  git tag --sort=-v:refname --list 'v*' | head -n1
+}
+
+# Bump pkgver + pkgrel in a PKGBUILD in place.
+set_pkgbuild_version() {
+  sed -i -E -e "s/^pkgver=.*/pkgver=$2/" -e "s/^pkgrel=.*/pkgrel=$3/" "$1"
+}
+
+cmd_aur() {
+  local version="" pkgrel=1 dry_run=false ci=false
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --pkgrel) pkgrel="${2:?--pkgrel needs a value}"; shift 2 ;;
+      --dry-run) dry_run=true; shift ;;
+      --ci) ci=true; shift ;;
+      -*) fail "unknown flag for aur: $1" ;;
+      *) version="$1"; shift ;;
+    esac
+  done
+  if [ -z "$version" ]; then
+    version=$(last_tag)
+    version="${version#v}"
+  fi
+  [ -n "$version" ] || fail "no version given and no v* tag found"
+
+  command -v makepkg >/dev/null 2>&1 || fail "makepkg not found; run 'aur' on an Arch machine"
+  [ -f "$SRC_DIR/PKGBUILD" ] || fail "PKGBUILD not found; expected $SRC_DIR"
+
+  banner "Updating the AUR package to $version-$pkgrel"
+  set_pkgbuild_version "$SRC_DIR/PKGBUILD" "$version" "$pkgrel"
+
+  banner "Regenerating .SRCINFO"
+  ( cd "$SRC_DIR" && makepkg --printsrcinfo > .SRCINFO )
+
+  if [ "$dry_run" = true ]; then
+    banner "[dry-run] PKGBUILD / .SRCINFO changes:"
+    git --no-pager diff -- "$SRC_DIR"
+    git checkout -- "$SRC_DIR"
+    return 0
+  fi
+
+  if [ "$ci" = true ]; then
+    banner "CI mode: not committing to the repo; publishing to the AUR only"
+  elif git diff --quiet -- "$SRC_DIR"; then
+    banner "PKGBUILD already at $version-$pkgrel; publishing as-is"
+  else
+    banner "Committing the bump"
+    git add "$SRC_DIR"
+    git commit -m "packaging(aur): bump to $version"
+    git push origin main \
+      || echo "  (couldn't push main; the commit exists locally: git push origin main)" >&2
+  fi
+
+  aur_publish "$version" "$pkgrel"
+  echo
+  echo "AUR UPDATED: $PKG at $version-$pkgrel."
+}
+
+# Push PKGBUILD + .SRCINFO to the package's AUR repo. The AUR branch is
+# master. Pushing to a package that does not exist yet creates it.
+aur_publish() {
+  local version="$1" pkgrel="$2"
+  local work; work=$(mktemp -d)
+
+  banner "Publishing $PKG to the AUR"
+  git clone --quiet "ssh://aur@aur.archlinux.org/$PKG.git" "$work" \
+    || { rm -rf "$work"; fail "clone $PKG.git failed; is the AUR SSH key available? (ssh aur@aur.archlinux.org help)"; }
+  cp "$SRC_DIR/PKGBUILD" "$SRC_DIR/.SRCINFO" "$work/"
+  git -C "$work" add PKGBUILD .SRCINFO
+  if git -C "$work" diff --cached --quiet; then
+    echo "  $PKG: already up to date on the AUR"
+    rm -rf "$work"
+    return 0
+  fi
+  git -C "$work" commit -q -m "$PKG $version-$pkgrel"
+  if ! git -C "$work" push --quiet origin HEAD:master; then
+    rm -rf "$work"
+    fail "push $PKG to the AUR failed; check the AUR SSH key and retry: scripts/ship aur $version"
+  fi
+  rm -rf "$work"
+  echo "  $PKG: published $version-$pkgrel"
+}
+
+usage() {
+  sed -n '4,19p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+case "${1:-}" in
+  aur) shift; cmd_aur "$@" ;;
+  *) usage; exit 2 ;;
+esac

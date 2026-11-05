@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # git describe needs the tags for the version string
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        run: |
+          go vet ./...
+          go test ./...
+
+      - name: Build release binaries (amd64 + arm64 + SHA256SUMS)
+        run: |
+          make dist VERSION="$GITHUB_REF_NAME"
+          cp udev/70-wolverine-ctl.rules dist/
+          ./dist/wolverine-ctl-"$GITHUB_REF_NAME"-linux-amd64 version | grep -qx "$GITHUB_REF_NAME"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            dist/wolverine-ctl-*
+            dist/SHA256SUMS
+            dist/70-wolverine-ctl.rules
+          generate_release_notes: true
+
+  # After the release publishes, push the bumped PKGBUILD to the AUR. Runs in
+  # an Arch container (makepkg refuses to run as root, hence the 'builder'
+  # user) and uses scripts/ship aur in --ci mode: it bumps pkgver, regenerates
+  # .SRCINFO and pushes to the AUR. The package builds from the git tag, so no
+  # release checksum is needed. Requires the AUR_SSH_PRIVATE_KEY secret: a key
+  # whose public half is registered on the maintainer's AUR account.
+  aur:
+    needs: release
+    runs-on: ubuntu-24.04
+    container: archlinux:base-devel
+    steps:
+      - name: Install tooling
+        run: pacman -Syu --noconfirm --needed git openssh
+
+      - uses: actions/checkout@v7
+
+      - name: Configure AUR SSH and a build user
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          useradd -m builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          install -d -m700 /home/builder/.ssh
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > /home/builder/.ssh/aur
+          chmod 600 /home/builder/.ssh/aur
+          ssh-keyscan -t ed25519 aur.archlinux.org > /home/builder/.ssh/known_hosts 2>/dev/null
+          cat > /home/builder/.ssh/config <<'EOF'
+          Host aur.archlinux.org
+            User aur
+            IdentityFile /home/builder/.ssh/aur
+            IdentitiesOnly yes
+          EOF
+          chown -R builder:builder /home/builder/.ssh
+
+      - name: Publish to the AUR
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          su - builder -c "
+            git config --global user.name 'Shawn McCool'
+            git config --global user.email 'shawn@mccool.email'
+            git config --global --add safe.directory '$GITHUB_WORKSPACE'
+            cd '$GITHUB_WORKSPACE'
+            scripts/ship aur '$ver' --ci
+          "

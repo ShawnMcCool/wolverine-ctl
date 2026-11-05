@@ -53,7 +53,14 @@ and can test, please open an issue.
 
 ## Install
 
-Download a static binary for `amd64` or `arm64` from
+On Arch Linux, from the [AUR](https://aur.archlinux.org/packages/wolverine-ctl).
+The package also installs the udev rule, so there is nothing else to set up:
+
+```sh
+yay -S wolverine-ctl
+```
+
+Elsewhere, download a static binary for `amd64` or `arm64` from
 [Releases](https://github.com/ShawnMcCool/wolverine-ctl/releases), then:
 
 ```sh
@@ -222,6 +229,18 @@ logs. wolverine-ctl is an independent implementation.
 ```sh
 make test
 ```
+
+## Releasing
+
+Push a version tag. The release workflow tests, builds the binaries,
+publishes the GitHub release and updates the AUR package:
+
+```sh
+git tag -a v0.2.0 -m "wolverine-ctl 0.2.0" && git push origin v0.2.0
+```
+
+The AUR step needs the `AUR_SSH_PRIVATE_KEY` repository secret. To publish
+the AUR package by hand from an Arch machine: `scripts/ship aur`.
 
 ## Not affiliated with Razer
 
